@@ -81,6 +81,17 @@ func (m *Manager) OverLimit(msgs []llm.Message) bool {
 	return m.estimator.CountMessages(msgs) > m.maxTokens
 }
 
+// ObservePromptUsage 用一次真实调用返回的 prompt_tokens 校准 token 估算系数。
+// msgs 是本次实际发送给模型的消息;actualPromptTokens 是服务端返回的真实用量。
+// 仅当估算器支持校准(CalibratedEstimator)时生效,其余情况静默忽略。
+func (m *Manager) ObservePromptUsage(msgs []llm.Message, actualPromptTokens int) {
+	c, ok := m.estimator.(CalibratableEstimator)
+	if !ok || actualPromptTokens <= 0 {
+		return
+	}
+	c.Calibrate(m.estimator.CountMessages(msgs), actualPromptTokens)
+}
+
 // Compact 超阈值时压缩:保留 system + 最近 compactKeepRounds 轮,更早内容压缩为摘要注入。
 // 智能模式优先(Summarizer),失败或未配置则退化为机械裁剪工具调用日志。
 func (m *Manager) Compact(ctx context.Context, msgs []llm.Message) []llm.Message {

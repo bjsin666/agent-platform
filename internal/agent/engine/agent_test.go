@@ -249,6 +249,7 @@ type fakeCtxMgr struct {
 
 func (f *fakeCtxMgr) BuildMessages(msgs []llm.Message) []llm.Message { return msgs }
 func (f *fakeCtxMgr) OverLimit(msgs []llm.Message) bool              { return len(msgs) > 3 }
+func (f *fakeCtxMgr) ObservePromptUsage([]llm.Message, int)          {}
 func (f *fakeCtxMgr) Compact(_ context.Context, msgs []llm.Message) []llm.Message {
 	f.compacted = true
 	if len(msgs) > 1 {

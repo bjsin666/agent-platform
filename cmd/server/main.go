@@ -106,10 +106,8 @@ func run() error {
 	go usageAgg.Run(usageCtx)
 
 	msgRepo := store.NewMessageRepo(db)
-	estimator, err := agentctx.NewTiktokenEstimator()
-	if err != nil {
-		return fmt.Errorf("初始化 token 估算器: %w", err)
-	}
+	// token 估算器:纯本地启发式估算,并用真实 usage 动态校准;不依赖任何外网资源。
+	estimator := agentctx.NewEstimator(cfg.Context.Estimator)
 	ctxMgr := agentctx.NewManager(estimator, agentctx.Options{
 		MaxTokens:         cfg.Context.MaxTokens,
 		RecentRounds:      cfg.Context.RecentRounds,

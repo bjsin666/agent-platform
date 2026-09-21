@@ -8,20 +8,53 @@ import (
 	"agent-platform/internal/agent/llm"
 )
 
-// TestEstimator 估算器基本计数。
-func TestEstimator(t *testing.T) {
-	est, err := NewTiktokenEstimator()
-	if err != nil {
-		t.Fatalf("加载编码失败: %v", err)
+// TestHeuristicEstimator 启发式估算的量级校验(纯本地,不联网)。
+func TestHeuristicEstimator(t *testing.T) {
+	h := HeuristicEstimator{}
+	if got := h.Count("Hello world"); got <= 0 {
+		t.Fatalf("英文计数异常: %d", got)
 	}
-	if n := est.Count("Hello world"); n <= 0 {
-		t.Fatalf("英文计数异常: %d", n)
+	if got := h.Count("你好世界"); got < 4 {
+		t.Fatalf("4 个中文字应至少估算为 4 token, got %d", got)
 	}
-	if n := est.Count("你好世界"); n <= 0 {
-		t.Fatalf("中文计数异常: %d", n)
+	if got := h.Count("        "); got < 1 {
+		t.Fatalf("空白文本也应至少 1 token, got %d", got)
 	}
-	if n := est.CountMessages([]llm.Message{{Role: llm.RoleUser, Content: "hi"}}); n <= 0 {
-		t.Fatalf("消息计数异常: %d", n)
+	if got := h.CountMessages([]llm.Message{{Role: llm.RoleUser, Content: "hi"}}); got <= 0 {
+		t.Fatalf("消息计数异常: %d", got)
+	}
+}
+
+// TestCalibratedEstimator_Converges 验证系数会向真实比值收敛。
+func TestCalibratedEstimator_Converges(t *testing.T) {
+	c := NewCalibratedEstimator()
+	if coef, n := c.Coefficient(); coef != 1.0 || n != 0 {
+		t.Fatalf("初始应为 1.0/0, got %v/%d", coef, n)
+	}
+	for i := 0; i < 60; i++ {
+		est := c.CountMessages([]llm.Message{{Role: llm.RoleUser, Content: strings.Repeat("a", 400)}})
+		c.Calibrate(est, int(float64(est)*1.5))
+	}
+	coef, n := c.Coefficient()
+	if n != 60 {
+		t.Fatalf("样本数应为 60, got %d", n)
+	}
+	if coef < 1.4 || coef > 1.6 {
+		t.Fatalf("系数应收敛到 1.5 附近, got %v", coef)
+	}
+}
+
+// TestCalibratedEstimator_IgnoresNoise 验证噪声样本被跳过、极端值被截断。
+func TestCalibratedEstimator_IgnoresNoise(t *testing.T) {
+	c := NewCalibratedEstimator()
+	c.Calibrate(5, 100)
+	c.Calibrate(100, 0)
+	if coef, n := c.Coefficient(); coef != 1.0 || n != 0 {
+		t.Fatalf("噪声样本不应影响系数, got %v/%d", coef, n)
+	}
+	c.Calibrate(1000, 100000)
+	if coef, _ := c.Coefficient(); coef > maxRatio {
+		t.Fatalf("系数不应超过上限 %v, got %v", maxRatio, coef)
 	}
 }
 

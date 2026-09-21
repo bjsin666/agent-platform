@@ -45,6 +45,9 @@ type ContextManager interface {
 	BuildMessages(msgs []llm.Message) []llm.Message
 	OverLimit(msgs []llm.Message) bool
 	Compact(ctx context.Context, msgs []llm.Message) []llm.Message
+	// ObservePromptUsage 用一次真实调用返回的 prompt_tokens 校准 token 估算
+	// (实现方可忽略;仅用于提升估算精度)。
+	ObservePromptUsage(msgs []llm.Message, actualPromptTokens int)
 }
 
 // UsageRecorder LLM 用量上报接口(Phase 8 用量统计)。

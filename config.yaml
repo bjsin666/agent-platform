@@ -29,7 +29,7 @@ context:
   max_tokens: 8000 # 上下文超阈值触发压缩
   recent_rounds: 10 # BuildMessages 保留最近 N 轮
   compact_keep_rounds: 5 # 压缩时保留最近 5 轮
-  estimator: tiktoken # token 估算器(tiktoken)
+  estimator: calibrated # token 估算器: calibrated(启发式+真实用量校准) | heuristic(纯启发式)
 
 embedding:
   batch_size: 32 # 批量 embedding 条数(上限)

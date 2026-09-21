@@ -233,7 +233,7 @@ func defaultConfig() *Config {
 			MaxTokens:         8000,
 			RecentRounds:      10,
 			CompactKeepRounds: 5,
-			Estimator:         "tiktoken",
+			Estimator:         "calibrated",
 		},
 		Embedding: EmbeddingConfig{
 			BatchSize: 32,

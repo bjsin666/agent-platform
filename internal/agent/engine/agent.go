@@ -38,7 +38,7 @@ func (e *Engine) AgentRun(ctx context.Context, sessionID uint64, userMsg string)
 		if err != nil {
 			return "", fmt.Errorf("第 %d 轮 LLM 调用失败: %w", iter, err)
 		}
-		e.recordUsage(ctx, resp, time.Since(llmStart))
+		e.recordUsage(ctx, messages, resp, time.Since(llmStart))
 
 		if len(resp.Message.ToolCalls) == 0 {
 			return e.persistAnswer(ctx, sessionID, resp.Message.Content)
@@ -72,7 +72,7 @@ func (e *Engine) AgentRunStream(ctx context.Context, sessionID uint64, userMsg s
 		if err != nil {
 			return "", fmt.Errorf("第 %d 轮 LLM 流式调用失败: %w", iter, err)
 		}
-		e.recordUsage(ctx, resp, time.Since(llmStart))
+		e.recordUsage(ctx, messages, resp, time.Since(llmStart))
 
 		if len(resp.Message.ToolCalls) == 0 {
 			return e.persistAnswer(ctx, sessionID, resp.Message.Content)
@@ -156,9 +156,14 @@ func (e *Engine) maxIter() int {
 }
 
 // recordUsage 上报 LLM 用量(Phase 8)。租户统一用 "default"(单租户)。
-func (e *Engine) recordUsage(ctx context.Context, resp *llm.ChatResponse, latency time.Duration) {
+func (e *Engine) recordUsage(ctx context.Context, sent []llm.Message, resp *llm.ChatResponse, latency time.Duration) {
 	if e.Usage != nil && resp != nil {
 		e.Usage.Record(ctx, "default", resp.Usage, latency)
+	}
+	// 用服务端返回的真实 prompt_tokens 校准本地 token 估算系数。
+	// 属于"顺手采集":不额外发起请求,估算偏差会被真实数据逐步修正。
+	if e.Context != nil && resp != nil && resp.Usage.PromptTokens > 0 {
+		e.Context.ObservePromptUsage(sent, resp.Usage.PromptTokens)
 	}
 }
 
