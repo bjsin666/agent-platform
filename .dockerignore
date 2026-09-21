@@ -1,0 +1,10 @@
+# 后端构建上下文忽略项
+.env
+.git
+*.log
+bin/
+dist/
+embed-service/models/
+embed-service/__pycache__/
+scripts/
+README.md

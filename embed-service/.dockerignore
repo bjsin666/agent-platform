@@ -1,0 +1,4 @@
+# embed 构建上下文忽略项
+__pycache__/
+*.log
+models/README.md

@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Platform Demo</title>
+<style>
+  :root { --fg:#1f2328; --bg:#f6f8fa; --card:#fff; --border:#d0d7de; --accent:#0969da; --ok:#1a7f37; --err:#cf222e; --warn:#9a6700; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--fg); }
+  header { background:#fff; border-bottom:1px solid var(--border); padding:12px 20px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; }
+  .pill { font-size:12px; padding:2px 10px; border-radius:12px; border:1px solid var(--border); }
+  .pill.ok { color:var(--ok); border-color:var(--ok); }
+  .pill.err { color:var(--err); border-color:var(--err); }
+  .pill.warn { color:var(--warn); border-color:var(--warn); }
+  main { display:grid; grid-template-columns: 280px 1fr 340px; gap:16px; padding:16px; max-width:1280px; margin:0 auto; }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:14px; }
+  .card h2 { font-size:14px; margin:0 0 10px; }
+  #chatlog { height:420px; overflow-y:auto; border:1px solid var(--border); border-radius:6px; padding:10px; background:#fff; font-size:14px; line-height:1.6; }
+  .msg { margin:6px 0; white-space:pre-wrap; }
+  .msg.user { color:var(--accent); }
+  .msg.assistant { color:var(--fg); }
+  .msg.tool { color:#57606a; font-size:12px; }
+  .row { display:flex; gap:8px; margin-top:10px; }
+  input[type=text], textarea, select { flex:1; padding:8px; border:1px solid var(--border); border-radius:6px; font-size:13px; }
+  button { padding:8px 14px; border:1px solid var(--border); border-radius:6px; background:#f6f8fa; cursor:pointer; font-size:13px; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { padding:6px 0; border-bottom:1px dashed var(--border); font-size:13px; display:flex; justify-content:space-between; gap:8px; align-items:center; }
+  .muted { color:#57606a; font-size:12px; }
+  .mono { font-family:ui-monospace,Consolas,monospace; font-size:12px; }
+  details { margin-top:8px; }
+  summary { cursor:pointer; font-size:13px; color:var(--accent); }
+  pre { background:#f6f8fa; border:1px solid var(--border); border-radius:6px; padding:8px; font-size:12px; overflow:auto; max-height:200px; white-space:pre-wrap; }
+  .statusdot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
+  #chatlog .md-head { font-weight:600; margin:8px 0 2px; }
+  #chatlog ul, #chatlog ol { margin:4px 0; padding-left:20px; }
+  #chatlog li { margin:2px 0; }
+  #chatlog code { background:#f6f8fa; border:1px solid var(--border); border-radius:4px; padding:0 4px; font-size:12px; }
+  #chatlog a { color:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🤖 Agent Platform Demo</h1>
+  <span id="h-mysql" class="pill warn">MySQL …</span>
+  <span id="h-redis" class="pill warn">Redis …</span>
+  <span id="h-embed" class="pill warn">Embed …</span>
+  <span style="flex:1"></span>
+  <input type="text" id="apikey" placeholder="API Key(可选)" style="max-width:180px">
+  <button onclick="refreshHealth()">刷新状态</button>
+</header>
+<main>
+  <div>
+    <div class="card">
+      <h2>🕘 历史会话 <button style="float:right" onclick="loadSessions()">刷新</button></h2>
+      <div class="row"><button class="primary" style="flex:none" onclick="newChat()">＋ 新建会话</button></div>
+      <ul id="sessions" style="margin-top:8px">加载中…</ul>
+    </div>
+  </div>
+  <div>
+    <div class="card">
+      <h2>💬 知识库问答（流式） <span id="cur-sess" class="muted"></span></h2>
+      <div id="chatlog">
+        <div class="msg muted">输入问题开始对话。示例：根据知识库回答，我们的产品有哪些核心功能？</div>
+      </div>
+      <div class="row">
+        <input type="text" id="q" placeholder="输入问题…" onkeydown="if(event.key==='Enter')send()">
+        <button class="primary" id="sendbtn" onclick="send()">发送</button>
+        <button onclick="clearChat()">清空</button>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>📊 定时报告执行记录</h2>
+      <div id="runs">加载中…</div>
+    </div>
+  </div>
+  <div>
+    <div class="card">
+      <h2>📄 知识库文档</h2>
+      <div class="row">
+        <input type="file" id="file" accept=".md,.txt,.markdown">
+        <button class="primary" onclick="uploadDoc()">上传</button>
+      </div>
+      <ul id="docs" style="margin-top:8px">加载中…</ul>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>⏰ 报告任务</h2>
+      <div class="row"><input type="text" id="t-name" placeholder="任务名,如:产品周报"></div>
+      <div class="row"><input type="text" id="t-cron" placeholder="cron,如:*/5 * * * *"></div>
+      <div class="row"><input type="text" id="t-kb" placeholder="知识库文档ID,逗号分隔,如:7,8,9"></div>
+      <div class="row"><input type="text" id="t-prompt" placeholder="提示词,如:生成产品周报"></div>
+      <div class="row"><input type="text" id="t-webhook" placeholder="webhook 地址(可选,如 http://127.0.0.1:9001)"></div>
+      <div class="row"><button class="primary" onclick="createTask()">创建任务</button></div>
+      <ul id="tasks" style="margin-top:8px">加载中…</ul>
+    </div>
+  </div>
+</main>
+<script>
+const BASE = "";
+let sessionId = null;
+const hdr = (json) => {
+  const h = {};
+  const key = document.getElementById("apikey").value.trim();
+  if (key) h["Authorization"] = "Bearer " + key;
+  if (json) h["Content-Type"] = "application/json";
+  return h;
+};
+async function api(path, opts) {
+  const r = await fetch(BASE + path, opts);
+  if (!r.ok) { let t = await r.text().catch(()=>""); throw new Error(r.status + " " + t.slice(0,200)); }
+  const j = await r.json().catch(()=>null);
+  if (j && j.code !== 0) throw new Error(j.msg || "业务错误");
+  return j ? j.data : null;
+}
+async function refreshHealth() {
+  try {
+    const h = await api("/health");
+    setPill("h-mysql", h.mysql, "MySQL");
+    setPill("h-redis", h.redis, "Redis");
+    setPill("h-embed", h.embed, "Embed");
+  } catch(e) { alert("健康检查失败: " + e.message); }
+}
+function setPill(id, ok, label) {
+  const el = document.getElementById(id);
+  el.textContent = label + " " + (ok ? "✓" : "✗");
+  el.className = "pill " + (ok ? "ok" : "err");
+}
+async function send() {
+  const q = document.getElementById("q").value.trim();
+  if (!q) return;
+  const btn = document.getElementById("sendbtn");
+  btn.disabled = true;
+  try {
+    if (!sessionId) {
+      sessionId = (await api("/v1/sessions", {method:"POST", headers:hdr(true), body: JSON.stringify({title: q.slice(0,20)})})).session_id;
+    }
+    appendMsg("user", "🧑 " + q);
+    appendMsg("tool", "⏳ 思考中…");
+    const resp = await fetch(BASE + "/v1/sessions/" + sessionId + "/chat", {
+      method: "POST", headers: hdr(true), body: JSON.stringify({message: q})
+    });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "", answer = "", thinking = true;
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream:true});
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const raw = buf.slice(0, idx); buf = buf.slice(idx+2);
+        const m = raw.match(/^data: (.*)$/m);
+        if (!m) continue;
+        const data = m[1].trim();
+        if (data === "[DONE]") continue;
+        let evt; try { evt = JSON.parse(data); } catch(e) { continue; }
+        if (evt.type === "delta") {
+          if (thinking) { removeThinking(); thinking = false; appendMsg("assistant", ""); }
+          answer += evt.content;
+          document.querySelector(".msg.assistant:last-of-type").innerHTML = "🤖 " + renderMD(answer);
+        } else if (evt.type === "done") {
+          if (thinking) { removeThinking(); }
+          document.querySelector(".msg.assistant:last-of-type").innerHTML = "🤖 " + renderMD(evt.content || answer);
+          document.getElementById("q").value = "";
+          loadSessions();
+        } else if (evt.type === "error") {
+          if (thinking) { removeThinking(); }
+          appendMsg("tool", "❌ " + evt.message);
+        }
+      }
+    }
+  } catch(e) {
+    removeThinking();
+    appendMsg("tool", "❌ " + e.message);
+  } finally { btn.disabled = false; }
+}
+function appendMsg(kind, text) {
+  const d = document.createElement("div");
+  d.className = "msg " + kind;
+  d.textContent = text;
+  document.getElementById("chatlog").appendChild(d);
+  document.getElementById("chatlog").scrollTop = 1e9;
+  return d;
+}
+function removeThinking() {
+  const els = document.querySelectorAll("#chatlog .msg.tool");
+  const last = els[els.length-1];
+  if (last && last.textContent.includes("思考中")) last.remove();
+}
+function clearChat() { sessionId = null; document.getElementById("chatlog").innerHTML = '<div class="msg muted">已清空，下次提问将新建会话。</div>'; }
+async function loadDocs() {
+  try {
+    const list = await api("/v1/kb/documents");
+    const ul = document.getElementById("docs");
+    ul.innerHTML = "";
+    if (!list.length) { ul.innerHTML = '<li class="muted">暂无文档</li>'; return; }
+    for (const d of list) {
+      const li = document.createElement("li");
+      li.innerHTML = `<span>${esc(d.title)} <span class="muted">(${d.chunk_count} 块 · ${d.status})</span></span>
+        <button onclick="delDoc(${d.id})">删除</button>`;
+      ul.appendChild(li);
+    }
+  } catch(e) { document.getElementById("docs").innerHTML = '<li class="muted">加载失败: ' + esc(e.message) + '</li>'; }
+}
+async function uploadDoc() {
+  const f = document.getElementById("file").files[0];
+  if (!f) return alert("先选择文件");
+  const fd = new FormData();
+  fd.append("file", f);
+  const key = document.getElementById("apikey").value.trim();
+  const h = key ? {Authorization:"Bearer " + key} : {};
+  const r = await fetch(BASE + "/v1/kb/documents", {method:"POST", headers:h, body:fd});
+  const j = await r.json();
+  if (j.code !== 0) return alert("上传失败: " + j.msg);
+  alert("已提交入库(异步), 文档ID=" + j.data.doc_id);
+  loadDocs();
+}
+async function delDoc(id) {
+  if (!confirm("删除文档 " + id + " ?")) return;
+  await api("/v1/kb/documents/" + id, {method:"DELETE", headers:hdr()});
+  loadDocs();
+}
+async function loadTasks() {
+  try {
+    const list = await api("/v1/report-tasks");
+    const ul = document.getElementById("tasks");
+    ul.innerHTML = "";
+    if (!list.length) { ul.innerHTML = '<li class="muted">暂无任务</li>'; return; }
+    for (const t of list) {
+      const li = document.createElement("li");
+      li.innerHTML = `<span>${esc(t.name)} <span class="muted">${esc(t.cron_expr)} · ${t.status}</span></span>
+        <span><button onclick="loadRuns(${t.id})">记录</button> <button onclick="delTask(${t.id})">删除</button></span>`;
+      ul.appendChild(li);
+    }
+  } catch(e) { document.getElementById("tasks").innerHTML = '<li class="muted">加载失败</li>'; }
+}
+async function createTask() {
+  const name = document.getElementById("t-name").value.trim();
+  const cron = document.getElementById("t-cron").value.trim() || "*/5 * * * *";
+  const kb = document.getElementById("t-kb").value.trim().split(",").map(s=>parseInt(s)).filter(Boolean);
+  const prompt = document.getElementById("t-prompt").value.trim() || "生成一份工作报告";
+  const wh = document.getElementById("t-webhook").value.trim();
+  if (!name || !kb.length) return alert("任务名和文档ID必填");
+  // 默认 console 渠道(无需外部接收端);填了 webhook 地址才走 webhook
+  const type = wh ? "webhook" : "console";
+  const body = {name, cron_expr:cron, kb_ids:kb, prompt_template:prompt, notify:{type, url: wh}};
+  await api("/v1/report-tasks", {method:"POST", headers:hdr(true), body: JSON.stringify(body)});
+  alert("任务已创建");
+  loadTasks();
+}
+async function delTask(id) {
+  if (!confirm("删除报告任务 #" + id + " 及其执行记录？")) return;
+  try {
+    await api("/v1/report-tasks/" + id, {method:"DELETE", headers:hdr()});
+    loadTasks();
+  } catch(e) { alert("删除失败: " + e.message); }
+}
+async function loadRuns(taskId) {
+  const list = await api("/v1/report-tasks/" + taskId + "/runs");
+  const box = document.getElementById("runs");
+  box.innerHTML = "";
+  if (!list.length) { box.innerHTML = '<div class="muted">暂无执行记录</div>'; return; }
+  for (const r of list.slice(0,5)) {
+    const d = document.createElement("details");
+    d.innerHTML = `<summary>${esc(r.status)} · ${esc(r.run_id.slice(0,12))} · ${r.started_at || ""}</summary>
+      <div class="muted">tokens: ${r.token_usage ? JSON.stringify(r.token_usage) : "—"}</div>
+      ${r.error ? `<div class="pill err">${esc(r.error)}</div>` : ""}
+      ${r.content ? `<pre>${esc(pretty(r.content))}</pre>` : ""}</details>`;
+    box.appendChild(d);
+  }
+}
+function pretty(s) {
+  try { return JSON.stringify(JSON.parse(s), null, 2); } catch(e) { return s; }
+}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+// 轻量 Markdown 渲染(无依赖):处理标题/加粗/行内代码/列表/链接,其余按纯文本。
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function inlineMD(s) {
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+  s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+  return s;
+}
+function renderMD(text) {
+  const lines = escHtml(text).split("\n");
+  let html = "", list = null;
+  const closeList = () => { if (list) { html += "</" + list + ">"; list = null; } };
+  for (let line of lines) {
+    const h = line.match(/^(#{1,4})\s+(.*)$/);
+    if (h) { closeList(); html += '<p class="md-head">' + inlineMD(h[2]) + "</p>"; continue; }
+    const ul = line.match(/^[-*]\s+(.*)$/);
+    if (ul) { if (list !== "ul") { closeList(); html += "<ul>"; list = "ul"; } html += "<li>" + inlineMD(ul[1]) + "</li>"; continue; }
+    const ol = line.match(/^\d+[.)]\s+(.*)$/);
+    if (ol) { if (list !== "ol") { closeList(); html += "<ol>"; list = "ol"; } html += "<li>" + inlineMD(ol[1]) + "</li>"; continue; }
+    if (line.trim() === "") { closeList(); continue; }
+    closeList();
+    html += "<p>" + inlineMD(line) + "</p>";
+  }
+  closeList();
+  return html;
+}
+async function loadSessions() {
+  try {
+    const list = await api("/v1/sessions");
+    const ul = document.getElementById("sessions");
+    ul.innerHTML = "";
+    if (!list.length) { ul.innerHTML = '<li class="muted">暂无会话</li>'; return; }
+    for (const s of list) {
+      const li = document.createElement("li");
+      li.innerHTML = `<span>${esc(s.title)} <span class="muted">#${s.id} · ${(s.created_at||"").replace("T"," ").slice(0,16)}</span></span>
+        <span><button onclick="openSession(${s.id})">打开</button> <button onclick="delSession(${s.id})">删除</button></span>`;
+      ul.appendChild(li);
+    }
+  } catch(e) { document.getElementById("sessions").innerHTML = '<li class="muted">加载失败</li>'; }
+}
+async function openSession(id) {
+  try {
+    const msgs = await api("/v1/sessions/" + id + "/messages");
+    const log = document.getElementById("chatlog");
+    log.innerHTML = "";
+    for (const m of msgs) {
+      if (m.role === "tool") continue;
+      if (m.role === "user") appendMsg("user", "🧑 " + m.content);
+      else if (m.role === "assistant" && m.content) {
+        const d = appendMsg("assistant", "");
+        d.innerHTML = "🤖 " + renderMD(m.content);
+      }
+    }
+    if (!msgs.length) appendMsg("muted", "该会话暂无消息");
+    sessionId = id;
+    document.getElementById("cur-sess").textContent = "· 会话 #" + id;
+  } catch(e) { alert("打开会话失败: " + e.message); }
+}
+async function delSession(id) {
+  if (!confirm("删除会话 #" + id + " 及其全部消息？")) return;
+  try {
+    await api("/v1/sessions/" + id, {method:"DELETE", headers:hdr()});
+    if (sessionId === id) { // 删的是当前会话 -> 切回新会话
+      sessionId = null;
+      document.getElementById("chatlog").innerHTML = '<div class="msg muted">当前会话已删除，已切换到新会话。</div>';
+      document.getElementById("cur-sess").textContent = "";
+    }
+    loadSessions();
+  } catch(e) { alert("删除失败: " + e.message); }
+}
+function newChat() {
+  sessionId = null;
+  document.getElementById("chatlog").innerHTML = '<div class="msg muted">已切换到新会话。</div>';
+  document.getElementById("cur-sess").textContent = "";
+  document.getElementById("q").value = "";
+}
+refreshHealth(); loadDocs(); loadTasks(); loadRuns(3); loadSessions();
+setInterval(refreshHealth, 15000);
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+# 敏感配置,绝不提交
+.env
+
+# IDE / 本地工具配置
+.idea/
+.claude/
+.vscode/
+
+# 构建产物与日志
+bin/
+dist/
+*.exe
+*.log
+*.test
+
+# 本地大模型文件(需手动从 shopping-website/local_models 复制)
+embed-service/models/
+
+# Go 依赖副本(vendor 已弃用:依赖改为模块代理拉取)
+vendor/

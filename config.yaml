@@ -1,0 +1,58 @@
+# 非敏感配置。敏感配置(API Key、数据库密码)放在 .env,由代码加载并覆盖本文件。
+# 修改本文件后需重启服务生效。
+
+log:
+  level: info # debug | info | warn | error
+
+http:
+  read_timeout: 30s
+  write_timeout: 120s # SSE 长连接需要较宽裕的写超时
+
+llm:
+  timeout_total: 60s # 单次请求总超时
+  timeout_first_token: 5s # 首 token 超时(仅 stream)
+  retry_max: 2 # 仅 5xx/超时重试,最多 2 次
+  circuit_fail_threshold: 5 # 连续 5 次失败 -> 熔断 open
+  circuit_open_duration: 30s # 熔断 open 时长
+  circuit_halfopen_probes: 1 # half-open 放行探测请求数
+  cache_ttl: 1h # 非流式响应 Redis 缓存 TTL
+
+agent:
+  max_iterations: 10 # ReAct 最大迭代次数
+  tool_concurrency: 3 # 工具全局最大并发
+  tool_timeout: 10s # 单工具超时
+  tool_retry: 2 # 仅幂等工具重试次数
+  tool_circuit_fail_threshold: 3 # 连续 3 次失败 -> 暂停该工具
+  tool_circuit_pause: 30s # 暂停时长
+
+context:
+  max_tokens: 8000 # 上下文超阈值触发压缩
+  recent_rounds: 10 # BuildMessages 保留最近 N 轮
+  compact_keep_rounds: 5 # 压缩时保留最近 5 轮
+  estimator: tiktoken # token 估算器(tiktoken)
+
+embedding:
+  batch_size: 32 # 批量 embedding 条数(上限)
+  timeout: 10s
+  retry_max: 2
+
+kb:
+  top_k: 10 # 混合检索合并去重后取 topK
+  max_chunk_chars: 800 # 单块最大字符数
+  overlap_chars: 50 # 相邻块重叠字符数
+
+report:
+  poll_interval: 60s # 调度器扫描间隔
+  worker_concurrency: 3 # 报告 DAG worker 并发
+  webhook_retry: 2 # webhook 通知重试次数
+  webhook_timeout: 10s
+
+store:
+  mysql_max_open: 50
+  mysql_max_idle: 10
+  redis_pool_size: 20
+
+governance:
+  rate_limit:
+    rate: 10 # 令牌桶每秒补充数
+    burst: 20 # 桶容量(允许突发)

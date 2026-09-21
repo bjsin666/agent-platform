@@ -1,0 +1,71 @@
+# Docker Compose 一键部署（全容器化：mysql/redis/embed/backend 都在容器里）
+# 用法: docker compose up -d        # 首次或改了代码后: docker compose up -d --build
+# 停止: docker compose stop         # 移除容器(数据保留): docker compose down
+services:
+  mysql:
+    image: mysql:8
+    restart: "no"                 # 手动启动模式(不用自动重启)
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-changeme}
+      MYSQL_DATABASE: agent
+    ports:
+      - "3307:3306"               # 映射到 3307,避开 Windows 上的 MySQL(3306)
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7
+    restart: "no"
+    ports:
+      - "6380:6379"               # 映射到 6380,避开 Windows 上的 Redis(6379)
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  embed:
+    build: ./embed-service
+    restart: "no"
+    environment:
+      # 关键修复:sentence-transformers v6 即使加载本地模型也会联网检查 HF Hub,
+      # 连接卡超时会导致启动多等约 149 秒;离线模式跳过检查,加载仅约 0.1 秒。
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 120s          # 离线模式下加载约 6 秒,此处给足余量
+
+  backend:
+    build: .
+    restart: "no"
+    init: true                    # Go 程序作 PID 1 时,由 tini 托管:处理信号 + 回收僵尸进程
+    env_file: .env
+    environment:
+      MYSQL_HOST: mysql           # Compose 内网服务名
+      MYSQL_PORT: "3306"          # 容器内端口
+      REDIS_ADDR: redis:6379
+      EMBED_SERVICE_URL: http://embed:8001
+      SERVER_PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      embed:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
